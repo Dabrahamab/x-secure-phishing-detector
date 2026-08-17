@@ -19,7 +19,7 @@ SMTP_CONFIG = {
     "smtp_server": os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
     "smtp_port": int(os.environ.get("SMTP_PORT", "587")),
     "username": os.environ.get("SMTP_USERNAME", "abdaniel2022@gmail.com"),
-    "password": os.environ.get("SMTP_PASSWORD", "diimbpxmqnxpbntm"),
+    "password": os.environ.get("SMTP_PASSWORD", ""),
     "from_email": os.environ.get("FROM_EMAIL", "abdaniel2022@gmail.com"),
 }
 
