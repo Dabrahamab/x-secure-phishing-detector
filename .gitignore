@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Runtime records
+threat_database.json
+evidence_reports/
+
+# Tests / misc
+.pytest_cache/
+.DS_Store

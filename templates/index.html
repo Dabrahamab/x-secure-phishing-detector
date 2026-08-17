@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Xsecure Web Application</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='styles.css') }}"
+    />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Web-based phishing detection</p>
+          <h1>Xsecure</h1>
+          <p class="subtitle">
+            Analyze suspicious URLs and send takedown requests from any browser.
+          </p>
+        </div>
+      </header>
+
+      <section class="panel">
+        <form
+          id="analysis-form"
+          class="stack"
+          enctype="multipart/form-data"
+          method="post"
+        >
+          <label for="urls">Enter URL(s) to analyze (one per line)</label>
+          <textarea
+            id="urls"
+            name="urls"
+            rows="8"
+            placeholder="https://example.com"
+          ></textarea>
+
+          <label for="urls_file">Or upload a text file</label>
+          <input type="file" id="urls_file" name="urls_file" accept=".txt" />
+
+          <!-- <p class="backend-note">
+            SMTP is configured on the backend, so users only need to analyze
+            URLs and request takedowns.
+          </p>
+-->
+          <div class="button-row">
+            <button type="submit" class="primary">Analyze URLs</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="stats-grid">
+          <article class="stat-card">
+            <h3>Total Analyzed</h3>
+            <span id="total_analyzed">0</span>
+          </article>
+          <article class="stat-card phishing">
+            <h3>Phishing</h3>
+            <span id="phishing_count">0</span>
+          </article>
+          <article class="stat-card suspicious">
+            <h3>Suspicious</h3>
+            <span id="suspicious_count">0</span>
+          </article>
+          <article class="stat-card safe">
+            <h3>Safe</h3>
+            <span id="safe_count">0</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" id="status-panel">
+        <div id="status-message" class="status">Ready to analyze.</div>
+        <div id="results-list" class="results-list"></div>
+
+        <div id="success-popup" class="popup hidden">
+          <div class="popup-content">
+            <h3 id="success-popup-title">Request Sent</h3>
+            <p id="success-popup-message">
+              Your takedown request was sent successfully.
+            </p>
+            <button
+              type="button"
+              id="popup-close-btn"
+              class="secondary"
+              onclick="hideSuccessPopup()"
+            >
+              Close now
+            </button>
+          </div>
+        </div>
+
+        <div id="email-section" class="takedown-panel hidden">
+          <p class="email-note">
+            To request a takedown from the hosting provider or registrar, enter
+            your email address. You will receive a confirmation once it is sent.
+          </p>
+          <div class="stack">
+            <label for="requester_email">Your email address</label>
+            <input
+              type="email"
+              id="requester_email"
+              name="requester_email"
+              placeholder="you@example.com"
+            />
+            <p id="takedown-warning" class="warning hidden"></p>
+            <button type="button" id="takedown-btn" class="primary">
+              Send Takedown Request
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="banner-shell" aria-live="polite">
+      <div class="marquee-wrap footer-marquee">
+        <marquee behavior="scroll" direction="left" scrollamount="8">
+          WEB-BASED PHISHING DETECTION SYSTEM.
+        </marquee>
+
+        <div class="system-status-bar">
+          <span class="status-icon" aria-hidden="true">◉</span>
+          <span id="live-clock">--:--:--</span>
+          <span class="status-divider">|</span>
+          <span id="live-timezone">UTC</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("analysis-form");
+      const resultsList = document.getElementById("results-list");
+      const statusMessage = document.getElementById("status-message");
+      const takedownButton = document.getElementById("takedown-btn");
+      const requesterEmailInput = document.getElementById("requester_email");
+      const emailSection = document.getElementById("email-section");
+      const takedownWarning = document.getElementById("takedown-warning");
+      const successPopup = document.getElementById("success-popup");
+      const successPopupMessage = document.getElementById(
+        "success-popup-message",
+      );
+      let successPopupTimer = null;
+      let successPopupTimeout = null;
+      let lastResults = [];
+
+      function hideSuccessPopup() {
+        if (successPopupTimer) {
+          clearInterval(successPopupTimer);
+          successPopupTimer = null;
+        }
+        if (successPopupTimeout) {
+          clearTimeout(successPopupTimeout);
+          successPopupTimeout = null;
+        }
+        if (successPopup) {
+          successPopup.classList.add("hidden");
+          successPopup.style.display = "none";
+        }
+      }
+      window.hideSuccessPopup = hideSuccessPopup;
+
+      const VALID_TLDS = new Set([
+        "com",
+        "org",
+        "net",
+        "edu",
+        "gov",
+        "mil",
+        "int",
+        "info",
+        "biz",
+        "io",
+        "ai",
+        "app",
+        "dev",
+        "tech",
+        "xyz",
+        "top",
+        "club",
+        "online",
+        "site",
+        "store",
+        "shop",
+        "live",
+        "news",
+        "blog",
+        "design",
+        "media",
+        "social",
+        "network",
+        "digital",
+        "solutions",
+        "services",
+        "cloud",
+        "finance",
+        "company",
+        "agency",
+        "business",
+        "email",
+        "group",
+        "marketing",
+        "money",
+        "one",
+        "page",
+        "pro",
+        "space",
+        "systems",
+        "web",
+        "website",
+        "work",
+        "world",
+        "zone",
+        "tv",
+        "me",
+        "us",
+        "uk",
+        "ca",
+        "au",
+        "de",
+        "fr",
+        "es",
+        "it",
+        "nl",
+        "be",
+        "ch",
+        "at",
+        "se",
+        "no",
+        "fi",
+        "dk",
+        "is",
+        "ie",
+        "lu",
+        "pt",
+        "gr",
+        "cy",
+        "mt",
+        "pl",
+        "cz",
+        "hu",
+        "ro",
+        "bg",
+        "hr",
+        "rs",
+        "sk",
+        "si",
+        "lt",
+        "lv",
+        "ee",
+        "by",
+        "ua",
+        "kz",
+        "uz",
+        "ru",
+        "in",
+        "jp",
+        "cn",
+        "kr",
+        "hk",
+        "tw",
+        "sg",
+        "my",
+        "th",
+        "ph",
+        "id",
+        "vn",
+        "br",
+        "mx",
+        "ar",
+        "cl",
+        "pe",
+        "co",
+        "ve",
+        "ec",
+        "uy",
+        "py",
+        "bo",
+        "za",
+        "ng",
+        "gh",
+        "ke",
+        "eg",
+        "ma",
+        "dz",
+        "tn",
+        "sa",
+        "ae",
+        "qa",
+        "kw",
+        "bh",
+        "om",
+        "il",
+        "tr",
+        "pk",
+        "bd",
+        "lk",
+        "np",
+        "nz",
+        "mn",
+        "az",
+        "ge",
+        "am",
+        "md",
+        "mk",
+        "al",
+        "ba",
+        "academy",
+        "accountants",
+        "adult",
+        "apartments",
+        "associates",
+        "bike",
+        "boutique",
+        "builders",
+        "camera",
+        "camp",
+        "capital",
+        "care",
+        "careers",
+        "casino",
+        "catering",
+        "center",
+        "ceo",
+        "city",
+        "claims",
+        "cleaning",
+        "clinic",
+        "clothing",
+        "coach",
+        "codes",
+        "coffee",
+        "college",
+        "community",
+        "computer",
+        "condos",
+        "construction",
+        "consulting",
+        "contractors",
+        "cooking",
+        "cool",
+        "coop",
+        "coupons",
+        "credit",
+        "creditcard",
+        "cruises",
+        "dance",
+        "dating",
+        "delivery",
+        "dental",
+        "diamonds",
+        "directory",
+        "discount",
+        "doctor",
+        "dog",
+        "domains",
+        "education",
+        "energy",
+        "engineering",
+        "enterprises",
+        "equipment",
+        "estate",
+        "events",
+        "exchange",
+        "expert",
+        "exposed",
+        "fail",
+        "farm",
+        "fashion",
+        "fitness",
+        "flights",
+        "florist",
+        "flowers",
+        "football",
+        "foundation",
+        "fun",
+        "fund",
+        "furniture",
+        "gallery",
+        "games",
+        "garden",
+        "gift",
+        "gifts",
+        "glass",
+        "global",
+        "golf",
+        "gratis",
+        "gripe",
+        "guitars",
+        "guru",
+        "health",
+        "healthcare",
+        "help",
+        "hiphop",
+        "hockey",
+        "holdings",
+        "holiday",
+        "hospital",
+        "host",
+        "house",
+        "immobilien",
+        "industries",
+        "institute",
+        "insure",
+        "international",
+        "investments",
+        "jetzt",
+        "jewelry",
+        "juegos",
+        "kaufen",
+        "kim",
+        "kitchen",
+        "land",
+        "lawyer",
+        "lease",
+        "legal",
+        "life",
+        "lighting",
+        "limited",
+        "limo",
+        "link",
+        "loan",
+        "loans",
+        "lol",
+        "maison",
+        "market",
+        "mba",
+        "medical",
+        "memorial",
+        "menu",
+        "mobi",
+        "moda",
+        "mortgage",
+        "movie",
+        "museum",
+        "name",
+        "navy",
+        "ninja",
+        "partners",
+        "parts",
+        "photography",
+        "photos",
+        "pics",
+        "pictures",
+        "pink",
+        "pizza",
+        "place",
+        "plumbing",
+        "plus",
+        "poker",
+        "press",
+        "productions",
+        "properties",
+        "protection",
+        "pub",
+        "recipes",
+        "rehab",
+        "reise",
+        "reisen",
+        "rent",
+        "rentals",
+        "repair",
+        "report",
+        "reviews",
+        "rich",
+        "rocks",
+        "rodeo",
+        "run",
+        "salon",
+        "school",
+        "schule",
+        "science",
+        "security",
+        "sexy",
+        "shoes",
+        "shopping",
+        "show",
+        "singles",
+        "soccer",
+        "solar",
+        "studio",
+        "style",
+        "supplies",
+        "supply",
+        "support",
+        "surgery",
+        "tattoo",
+        "tax",
+        "taxi",
+        "team",
+        "technology",
+        "tennis",
+        "theater",
+        "tickets",
+        "tips",
+        "tires",
+        "today",
+        "tools",
+        "tours",
+        "town",
+        "toys",
+        "trade",
+        "training",
+        "travel",
+        "university",
+        "vacations",
+        "vegas",
+        "ventures",
+        "vet",
+        "viajes",
+        "video",
+        "villas",
+        "vision",
+        "voyage",
+        "watch",
+        "weather",
+        "wedding",
+        "wiki",
+        "wine",
+        "winners",
+        "works",
+        "wtf",
+      ]);
+
+      const DISPOSABLE_DOMAINS = new Set([
+        "yopmail.com",
+        "yopmail.fr",
+        "yopmail.net",
+        "yopmail.co",
+        "yopmail.org",
+        "yopmail.co.in",
+        "yopmail.io",
+        "yopmail.info",
+        "mailinator.com",
+        "mailinator.net",
+        "mailinator.org",
+        "mailinator.io",
+        "guerrillamail.com",
+        "guerrillamail.net",
+        "guerrillamail.org",
+        "guerrillamail.biz",
+        "guerrillamail.de",
+        "grr.la",
+        "sharklasers.com",
+        "tempmail.com",
+        "temp-mail.org",
+        "temp-mail.io",
+        "tempmail.net",
+        "10minutemail.com",
+        "10minutemail.net",
+        "10minutemail.org",
+        "maildrop.cc",
+        "trashmail.com",
+        "trashmail.net",
+        "trashmail.org",
+        "trashmail.de",
+        "trashmail.me",
+        "trashmail.ws",
+        "throwawaymail.com",
+        "throwawaymail.org",
+        "throwaway.email",
+        "throwaway.de",
+        "mozmail.com",
+        "dispostable.com",
+        "mailnesia.com",
+        "getnada.com",
+        "nada.email",
+        "inboxkitten.com",
+        "emailondeck.com",
+        "fakeinbox.com",
+        "mailcatch.com",
+        "spamgourmet.com",
+        "spam4.me",
+        "mail.tm",
+        "tmpmail.org",
+        "tmail.ws",
+        "okeymail.com",
+        "dropmail.me",
+        "emltmp.com",
+        "mintemail.com",
+        "mailmetrash.com",
+        "meltmail.com",
+        "spam.la",
+        "emailtemporario.com.br",
+        "mailhour.com",
+        "mailmoat.com",
+        "mailnull.com",
+        "mailexpire.com",
+        "mytemp.email",
+        "nwytg.net",
+        "spamcero.com",
+        "sneakemail.com",
+        "spamex.com",
+        "spamfree24.org",
+        "tempinbox.com",
+        "tempinbox.co.uk",
+        "tempmailaddress.com",
+        "throwawayemailaddress.com",
+        "tmailor.com",
+        "tmail9.com",
+        "tradermail.info",
+        "tyldd.com",
+        "ubermail.me",
+        "veryrealemail.com",
+        "wegwerfmail.de",
+        "wegwerfmail.net",
+        "wegwerfmail.org",
+        "whyyyy.me",
+        "willselfdestruct.com",
+        "yuurok.com",
+        "zehnminuten.de",
+        "zehnminutenmail.de",
+        "24hourmail.com",
+        "dodgit.com",
+        "dodgit.org",
+        "e4ward.com",
+        "getairmail.com",
+        "hidzz.com",
+        "mailforspam.com",
+        "mvrht.net",
+        "spambob.com",
+        "bobmail.info",
+        "burnermail.io",
+        "discard.email",
+        "emailfake.com",
+        "fakemailgenerator.com",
+        "mytrashmail.com",
+        "sendspamhere.com",
+      ]);
+
+      const BLOCK_DISPOSABLE = false;
+
+      function emailError(email) {
+        const match = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/.exec(email || "");
+        if (!match) {
+          return "The email must be a valid email address (e.g., you@example.com).";
+        }
+        const domain = match[1].toLowerCase();
+        const tld = domain.split(".").pop();
+        if (!VALID_TLDS.has(tld)) {
+          return (
+            "The email domain must end in a legitimate top-level domain (e.g., .com, .org, .net). '.'" +
+            tld +
+            "' is not recognized."
+          );
+        }
+        if (BLOCK_DISPOSABLE) {
+          const parts = domain.split(".");
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (DISPOSABLE_DOMAINS.has(parts.slice(i).join("."))) {
+              return "Disposable/temporary email addresses (e.g., yopmail, mailinator) are not accepted.";
+            }
+          }
+        }
+        return null;
+      }
+
+      function isValidEmail(email) {
+        return emailError(email) === null;
+      }
+
+      function updateSummary(summary) {
+        document.getElementById("total_analyzed").textContent =
+          summary.total_analyzed;
+        document.getElementById("phishing_count").textContent =
+          summary.phishing_count;
+        document.getElementById("suspicious_count").textContent =
+          summary.suspicious_count;
+        document.getElementById("safe_count").textContent = summary.safe_count;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function formatValue(value) {
+        if (value === null || value === undefined || value === "") {
+          return "Unknown";
+        }
+        if (Array.isArray(value)) {
+          return value.length ? value.join(", ") : "None";
+        }
+        if (typeof value === "object") {
+          return Object.keys(value).length ? JSON.stringify(value) : "Unknown";
+        }
+        return String(value);
+      }
+
+      const FULL_LABELS = {
+        // Network
+        a_records: "A Records (IPv4 Addresses)",
+        dns_resolution_status: "DNS Resolution Status",
+        aaaa_records: "AAAA Records (IPv6 Addresses)",
+        mx_records: "MX Records (Mail Exchanger)",
+        spf_record: "SPF Record (Sender Policy Framework)",
+        dkim_record: "DomainKeys Identified Mail (DKIM)",
+        dmarc_record:
+          "DMARC Record (Domain-based Message Authentication, Reporting & Conformance)",
+        ptr_record: "PTR Record (Reverse DNS)",
+        asn: "ASN (Autonomous System Number)",
+        bgp_routes: "Border Gateway Protocol Routes (Network Paths)",
+        hosting_provider: "Hosting Provider",
+        data_center_org: "Data Center Organization",
+        geo_country: "Geographic Country",
+        geo_region: "Geographic Region",
+        isp: "ISP (Internet Service Provider)",
+        cdn_detected: "CDN Detected (Content Delivery Network)",
+        // Domain
+        iana_id: "IANA ID (Registrar Identifier)",
+        whois_lookup_status: "WHOIS Lookup Status",
+        registrant_name: "Registrant Name (Domain Owner)",
+        name_servers: "Name Servers (DNS Hosts)",
+        tld_type: "TLD Type (Top-Level Domain)",
+        tld_risk_level: "TLD Risk Level (Top-Level Domain)",
+        domain_age_days: "Domain Age (Days)",
+        dns_hardening_missing: "DNS Hardening Missing",
+        privacy_protected: "Privacy Protected (Whois Guard)",
+        // SSL
+        certificate_authority: "Certificate Authority (SSL Issuer)",
+        issuer: "Certificate Issuer",
+        certificate_type: "Certificate Type",
+        tls_protocol_version: "TLS Protocol Version",
+        cipher_suite: "Cipher Suite (Encryption Strength)",
+        revocation_status: "Certificate Revocation Status",
+        // URL
+        full_url_length: "Full URL Length (Characters)",
+        query_string_count: "Query String Count (Parameters)",
+        subdomain_count: "Subdomain Count",
+        // HTTP
+        status_code: "HTTP Status Code (Server Response)",
+        redirect_count: "Redirect Count",
+        content_type_header: "Content-Type Header",
+        server_header: "Server Header",
+        // HTML
+        page_title: "Page Title",
+        meta_description: "Meta Description",
+        favicon_hash: "Favicon Hash (Site Icon Fingerprint)",
+        content_similarity: "Content Similarity Score",
+        // Reputation
+        malicious_status: "Malicious Status (Threat Feed)",
+        risk_score: "Risk Score (0-100)",
+        // Behavior
+        headless_browser_screenshot: "Headless Browser Screenshot",
+        dynamic_js_execution_log: "Dynamic JavaScript Execution Log",
+        async_network_requests: "Async Network Requests",
+        anti_analysis_signals: "Anti-Analysis Signals",
+        canvas_fingerprinting_scripts: "Canvas Fingerprinting Scripts",
+        dynamic_behavior_score: "Dynamic Behavior Score",
+      };
+
+      function renderMetricCard(label, value) {
+        return `
+          <div class="intel-row">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(String(value))}</strong>
+          </div>
+        `;
+      }
+
+      function renderStructuredSection(title, data) {
+        if (!data || typeof data !== "object") {
+          return "";
+        }
+
+        const entries = Object.entries(data).slice(0, 8);
+        const cards = entries
+          .map(([key, value]) => {
+            const sanitized = Array.isArray(value)
+              ? value.join(", ")
+              : typeof value === "object"
+                ? JSON.stringify(value)
+                : value;
+            const label = FULL_LABELS[key] || key.replace(/_/g, " ");
+            return renderMetricCard(label, sanitized ?? "Unknown");
+          })
+          .join("");
+
+        return `
+          <details class="intel-details" open>
+            <summary>${title}</summary>
+            <div class="intel-grid">${cards}</div>
+          </details>
+        `;
+      }
+
+      function renderTechnicalIntel(intel) {
+        if (!intel || typeof intel !== "object") {
+          return "<p class='intel-empty'>No technical intelligence available.</p>";
+        }
+
+        const sections = [
+          ["Domain", intel.domain],
+          ["Network", intel.network],
+          ["SSL", intel.ssl],
+          ["URL", intel.url],
+          ["HTTP", intel.http],
+          ["HTML", intel.html],
+          ["Reputation", intel.reputation],
+          ["Behavior", intel.behavior],
+        ];
+
+        const renderedSections = sections
+          .filter(
+            ([, data]) =>
+              data && typeof data === "object" && Object.keys(data).length,
+          )
+          .map(([title, data]) => renderStructuredSection(title, data))
+          .join("");
+
+        return (
+          renderedSections ||
+          "<p class='intel-empty'>No technical intelligence available.</p>"
+        );
+      }
+
+      function renderResults(results) {
+        if (!results.length) {
+          resultsList.innerHTML = "<p>No results yet.</p>";
+          return;
+        }
+
+        resultsList.innerHTML = results
+          .map((item) => {
+            const isSafe = item.status === "Safe";
+            const meterPct = isSafe
+              ? item.safe_percentage
+              : item.suspicious_percentage;
+            const meterLabel = isSafe
+              ? `${item.safe_percentage}% clean`
+              : `${item.suspicious_percentage}% ${item.status === "Phishing" ? "phishing" : "suspicious"}`;
+            const scoreLine = isSafe
+              ? `<p class="risk-score-line"><strong>Clean score:</strong> ${item.safe_percentage}% (Safe)</p>`
+              : `<p class="risk-score-line"><strong>Risk score:</strong> ${item.suspicious_percentage}/100 (${item.status})</p>`;
+
+            return `
+          <article class="result-card">
+            <div class="result-header">
+              <strong>${escapeHtml(item.url)}</strong>
+              <span class="badge ${item.status.toLowerCase()}">${item.status}</span>
+            </div>
+            <div class="risk-meter">
+              <div
+                class="risk-fill ${item.status.toLowerCase()}"
+                style="width: ${meterPct}%"
+              ></div>
+              <span class="risk-meter-label">${meterLabel}</span>
+            </div>
+            ${scoreLine}
+            <p><strong>Domain:</strong> ${escapeHtml(item.domain)}</p>
+            <p><strong>IP address:</strong> ${escapeHtml(item.ip_address)}</p>
+            <p><strong>Registrar:</strong> ${escapeHtml(item.registrar)}</p>
+            <p><strong>Abuse contacts:</strong> ${escapeHtml(item.abuse_contacts.join(", ") || "None listed")}</p>
+            <div class="technical-intel-box">
+              ${renderTechnicalIntel(item.technical_intel)}
+            </div>
+          </article>
+        `;
+          })
+          .join("");
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        statusMessage.textContent = "Analyzing URLs...";
+
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          body: formData,
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          statusMessage.textContent =
+            payload.error || "Could not analyze URLs.";
+          return;
+        }
+
+        lastResults = payload.results;
+        updateSummary(payload.summary);
+        renderResults(payload.results);
+        statusMessage.textContent = "Analysis complete.";
+        if (emailSection) emailSection.classList.remove("hidden");
+        if (takedownWarning) takedownWarning.classList.add("hidden");
+      });
+
+      requesterEmailInput?.addEventListener("input", () => {
+        const email = requesterEmailInput.value.trim();
+        const emailErrorText = email ? emailError(email) : null;
+        if (emailErrorText) {
+          takedownWarning.textContent = emailErrorText;
+          takedownWarning.classList.remove("hidden");
+          return;
+        }
+        takedownWarning.classList.add("hidden");
+      });
+
+      function showResultPopup(title, message) {
+        const popupTitle = document.getElementById("success-popup-title");
+        if (popupTitle) popupTitle.textContent = title;
+        let countdown = 10;
+        successPopupMessage.textContent =
+          message + " Closing in " + countdown + "s.";
+        successPopup.classList.remove("hidden");
+        successPopup.style.display = "flex";
+
+        if (successPopupTimer) {
+          clearInterval(successPopupTimer);
+          successPopupTimer = null;
+        }
+        if (successPopupTimeout) {
+          clearTimeout(successPopupTimeout);
+          successPopupTimeout = null;
+        }
+
+        successPopupTimer = setInterval(() => {
+          countdown -= 1;
+          if (countdown <= 0) {
+            hideSuccessPopup();
+            return;
+          }
+          successPopupMessage.textContent =
+            message + " Closing in " + countdown + "s.";
+        }, 1000);
+
+        successPopupTimeout = setTimeout(hideSuccessPopup, 11000);
+      }
+
+      takedownButton?.addEventListener("click", async () => {
+        if (!lastResults.length) {
+          statusMessage.textContent = "Run analysis first.";
+          return;
+        }
+
+        const phishingResults = lastResults.filter(
+          (item) => item.status === "Phishing",
+        );
+        const describe = (item) => {
+          if (item.status === "Safe") {
+            return `${item.url}: Safe (${item.safe_percentage}% clean)`;
+          }
+          return `${item.url} is detected as ${item.fraud_type} (${item.maliciousness} malicious). Risk: ${item.suspicious_percentage}% ${item.status}`;
+        };
+        const messageText = (
+          phishingResults.length ? phishingResults : lastResults
+        )
+          .map(describe)
+          .join("\n");
+
+        statusMessage.textContent = messageText;
+
+        const requesterEmail = requesterEmailInput.value.trim();
+        const emailErrorText = emailError(requesterEmail);
+        if (emailErrorText) {
+          takedownWarning.textContent = emailErrorText;
+          takedownWarning.classList.remove("hidden");
+          statusMessage.textContent =
+            "Enter a valid email address to send a takedown request.";
+          return;
+        }
+        takedownWarning.classList.add("hidden");
+
+        takedownButton.disabled = true;
+        takedownButton.textContent = "Sending...";
+        statusMessage.textContent = "Sending takedown requests...";
+        try {
+          let response;
+          try {
+            response = await fetch("/api/takedown", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                results: lastResults,
+                requester_email: requesterEmail,
+              }),
+            });
+          } catch (err) {
+            statusMessage.textContent =
+              "Could not reach the server to send the takedown request.";
+            return;
+          }
+
+          const payload = await response.json();
+          if (!response.ok) {
+            statusMessage.textContent =
+              payload.error || "Takedown could not be completed.";
+            return;
+          }
+
+          if (payload.success_count <= 0) {
+            statusMessage.textContent =
+              payload.message || "No takedown request was sent.";
+            const firstError = (payload.takedowns || [])
+              .map((t) => t.error)
+              .find(Boolean);
+            if (firstError) {
+              statusMessage.textContent += " Reason: " + firstError;
+            }
+            showResultPopup("No Request Sent", statusMessage.textContent);
+            return;
+          }
+
+          if (payload.email_sent) {
+            statusMessage.textContent =
+              payload.message + " A confirmation email was sent to you.";
+          } else {
+            statusMessage.textContent =
+              payload.message +
+              " We could not send a confirmation email right now.";
+          }
+
+          showResultPopup("Request Sent", statusMessage.textContent);
+        } finally {
+          takedownButton.disabled = false;
+          takedownButton.textContent = "Send Takedown Request";
+        }
+      });
+
+      const popupCloseButton = document.getElementById("popup-close-btn");
+      if (popupCloseButton) {
+        popupCloseButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          hideSuccessPopup();
+        });
+      }
+      if (successPopup) {
+        successPopup.addEventListener("click", (event) => {
+          if (event.target === successPopup) {
+            hideSuccessPopup();
+          }
+        });
+      }
+
+      function updateLiveClock() {
+        const now = new Date();
+        const timeText = now.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        });
+        const timezoneText =
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "Local Time";
+
+        const liveClock = document.getElementById("live-clock");
+        const liveTimezone = document.getElementById("live-timezone");
+
+        if (liveClock) {
+          liveClock.textContent = timeText;
+        }
+        if (liveTimezone) {
+          liveTimezone.textContent = timezoneText;
+        }
+      }
+
+      updateLiveClock();
+      setInterval(updateLiveClock, 1000);
+    </script>
+  </body>
+</html>
