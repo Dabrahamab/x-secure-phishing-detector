@@ -10,6 +10,9 @@ env/
 threat_database.json
 evidence_reports/
 
+# Local secrets
+smtp_config.json
+
 # Tests / misc
 .pytest_cache/
 .DS_Store

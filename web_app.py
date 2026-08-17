@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import smtplib
@@ -15,13 +16,31 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 system = PhishingTakedownSystem()
 
-SMTP_CONFIG = {
-    "smtp_server": os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
-    "smtp_port": int(os.environ.get("SMTP_PORT", "587")),
-    "username": os.environ.get("SMTP_USERNAME", "abdaniel2022@gmail.com"),
-    "password": os.environ.get("SMTP_PASSWORD", ""),
-    "from_email": os.environ.get("FROM_EMAIL", "abdaniel2022@gmail.com"),
-}
+
+def _load_smtp_config() -> dict:
+    config = {
+        "smtp_server": os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
+        "smtp_port": int(os.environ.get("SMTP_PORT", "587")),
+        "username": os.environ.get("SMTP_USERNAME", "abdaniel2022@gmail.com"),
+        "password": os.environ.get("SMTP_PASSWORD", "diimbpxmqnxpbntm"),
+        "from_email": os.environ.get("FROM_EMAIL", "abdaniel2022@gmail.com"),
+    }
+    local_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smtp_config.json")
+    if os.path.exists(local_file) and not config.get("password"):
+        try:
+            with open(local_file, "r", encoding="utf-8") as handle:
+                stored = json.load(handle)
+            for key in ("smtp_server", "smtp_port", "username", "password", "from_email"):
+                if stored.get(key):
+                    config[key] = stored[key]
+            if config.get("smtp_port"):
+                config["smtp_port"] = int(config["smtp_port"])
+        except Exception:
+            pass
+    return config
+
+
+SMTP_CONFIG = _load_smtp_config()
 
 
 def _normalize_urls(raw_text: str) -> list[str]:
