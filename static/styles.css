@@ -488,3 +488,8 @@ button:disabled {
   color: #94a3b8;
   letter-spacing: 0.06em;
 }
+
+.footer-brand {
+  font-weight: 800;
+  color: #e2e8f0;
+}
