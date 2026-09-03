@@ -317,7 +317,7 @@ class PhishingTakedownSystem:
                 raise ValueError("missing artifacts")
             self.feature_names = list(self.uci_features)
             self.ml_ready = True
-            print("[INFO] Random Forest Model (97.01% Accuracy) Loaded Successfully!")
+            print("[INFO] Random Forest Model Loaded Successfully (98.09% accuracy on the phishing dataset).")
             return True
         except Exception as exc:
             self.uci_model = None
