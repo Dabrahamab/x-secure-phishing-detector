@@ -633,7 +633,7 @@
         "sendspamhere.com",
       ]);
 
-      const BLOCK_DISPOSABLE = false;
+      const BLOCK_DISPOSABLE = true;
 
       function emailError(email) {
         const match = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/.exec(email || "");
@@ -976,8 +976,10 @@
 
           const payload = await response.json();
           if (!response.ok) {
-            statusMessage.textContent =
+            const errorMessage =
               payload.error || "Takedown could not be completed.";
+            statusMessage.textContent = errorMessage;
+            showResultPopup("Request Error", errorMessage);
             return;
           }
 
