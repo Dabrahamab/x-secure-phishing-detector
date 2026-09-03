@@ -649,14 +649,47 @@
             "' is not recognized."
           );
         }
-        const typoMarkers = [
-          "yopmal", "yopmai1", "yopmaill", "mailinatorr", "mailinat0r",
-          "trashmailr", "guerrillamaill", "tempmaill", "10minutemaill",
+        const DISPOSABLE_BASES = [
+          "yopmail", "mailinator", "maildrop", "trashmail", "guerrillamail",
+          "tempmail", "10minutemail", "throwawaymail", "fakeinbox", "getnada",
+          "emailondeck", "dispostable", "mailnesia", "mintemail",
+          "spamgourmet", "wegwerfmail", "temporarymail", "guerrilla",
+          "mailcatch", "burnermail",
         ];
-        for (const marker of typoMarkers) {
-          if (domain.includes(marker)) {
-            return "That email address does not look valid - the domain appears to be misspelled (e.g. did you mean yopmail.com?).";
-          }
+        const base = domain
+          .split(".")[0]
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+        const isDisposableTypo = (() => {
+          if (DISPOSABLE_BASES.includes(base)) return false;
+          const lev = (a, b) => {
+            if (!a.length) return b.length;
+            if (!b.length) return a.length;
+            let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+            for (let i = 1; i <= a.length; i++) {
+              const curr = [i];
+              for (let j = 1; j <= b.length; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                curr.push(
+                  Math.min(
+                    prev[j] + 1,
+                    curr[j - 1] + 1,
+                    prev[j - 1] + cost,
+                  ),
+                );
+              }
+              prev = curr;
+            }
+            return prev[prev.length - 1];
+          };
+          return DISPOSABLE_BASES.some(
+            (known) =>
+              lev(base, known) <= 2 &&
+              Math.abs(base.length - known.length) <= 2,
+          );
+        })();
+        if (isDisposableTypo) {
+          return "That email address does not look valid - the domain appears to be misspelled (e.g. did you mean yopmail.com?).";
         }
         if (BLOCK_DISPOSABLE) {
           const parts = domain.split(".");

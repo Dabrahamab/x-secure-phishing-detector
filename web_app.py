@@ -151,6 +151,45 @@ DISPOSABLE_EMAIL_DOMAINS = {
 BLOCK_DISPOSABLE_EMAILS = False
 
 
+def _levenshtein(a: str, b: str) -> int:
+    """Edit distance (insertions/deletions/substitutions) between two strings."""
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i]
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            curr.append(min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost))
+        prev = curr
+    return prev[-1]
+
+
+DISPOSABLE_BASES = [
+    "yopmail", "mailinator", "maildrop", "trashmail", "guerrillamail",
+    "tempmail", "10minutemail", "throwawaymail", "fakeinbox", "getnada",
+    "emailondeck", "dispostable", "mailnesia", "mintemail", "spamgourmet",
+    "wegwerfmail", "temporarymail", "guerrilla", "mailcatch", "burnermail",
+]
+
+
+def _is_disposable_typo(domain: str) -> bool:
+    """Return True if the domain's base name is close to (but not exactly)
+    a known disposable-email brand. This catches typos like 'yopmail',
+    'yopmaail' or 'yopmil' that would otherwise slip through."""
+    base = domain.split(".")[0].strip().lower()
+    tokens = re.split(r"[^a-z0-9]", base)
+    base = "".join(tokens)
+    if base in DISPOSABLE_BASES:
+        return False
+    for known in DISPOSABLE_BASES:
+        if _levenshtein(base, known) <= 2 and abs(len(base) - len(known)) <= 2:
+            return True
+    return False
+
+
 def _email_error(email: str) -> str | None:
     match = re.match(r"^[^\s@]+@([^\s@]+\.[^\s@]+)$", email or "")
     if not match:
@@ -160,18 +199,11 @@ def _email_error(email: str) -> str | None:
     if tld not in VALID_EMAIL_TLDS:
         return (f"The email domain must end in a legitimate top-level domain "
                 f"(e.g., .com, .org, .net). '.{tld}' is not recognized.")
-    # Always catch obvious typos/misspellings of common temporary-email domains
-    # (e.g. "yopmal" instead of "yopmail"). Correct disposable domains are
-    # still allowed when BLOCK_DISPOSABLE_EMAILS is False, but misspellings
-    # are always rejected so addresses are valid and correct.
-    low = domain.lower()
-    typo_markers = ("yopmal", "yopmai1", "yopmaill", "mailinatorr",
-                    "mailinat0r", "trashmailr", "guerrillamaill",
-                    "tempmaill", "10minutemaill")
-    for marker in typo_markers:
-        if marker in low:
-            return ("That email address does not look valid - the domain "
-                    "appears to be misspelled (e.g. did you mean yopmail.com?).")
+    # Always catch typos/misspellings of common temporary-email domains so the
+    # address is correct even while disposable domains are allowed for testing.
+    if _is_disposable_typo(domain):
+        return ("That email address does not look valid - the domain "
+                "appears to be misspelled (e.g. did you mean yopmail.com?).")
     if BLOCK_DISPOSABLE_EMAILS:
         parts = domain.split(".")
         for i in range(len(parts) - 1):
