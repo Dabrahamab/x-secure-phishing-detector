@@ -145,7 +145,10 @@ DISPOSABLE_EMAIL_DOMAINS = {
     "sendspamhere.com",
 }
 
-BLOCK_DISPOSABLE_EMAILS = True
+# Disposable/temporary email addresses (e.g., yopmail) are ALLOWED during
+# testing. Set to True to reject them in production. Typos and invalid
+# addresses are always rejected regardless of this flag.
+BLOCK_DISPOSABLE_EMAILS = False
 
 
 def _email_error(email: str) -> str | None:
@@ -157,18 +160,22 @@ def _email_error(email: str) -> str | None:
     if tld not in VALID_EMAIL_TLDS:
         return (f"The email domain must end in a legitimate top-level domain "
                 f"(e.g., .com, .org, .net). '.{tld}' is not recognized.")
+    # Always catch obvious typos/misspellings of common temporary-email domains
+    # (e.g. "yopmal" instead of "yopmail"). Correct disposable domains are
+    # still allowed when BLOCK_DISPOSABLE_EMAILS is False, but misspellings
+    # are always rejected so addresses are valid and correct.
+    low = domain.lower()
+    typo_markers = ("yopmal", "yopmai1", "yopmaill", "mailinatorr",
+                    "mailinat0r", "trashmailr", "guerrillamaill",
+                    "tempmaill", "10minutemaill")
+    for marker in typo_markers:
+        if marker in low:
+            return ("That email address does not look valid - the domain "
+                    "appears to be misspelled (e.g. did you mean yopmail.com?).")
     if BLOCK_DISPOSABLE_EMAILS:
         parts = domain.split(".")
         for i in range(len(parts) - 1):
             if ".".join(parts[i:]) in DISPOSABLE_EMAIL_DOMAINS:
-                return ("Disposable/temporary email addresses (e.g., yopmail, "
-                        "mailinator) are not accepted.")
-        low = domain.lower()
-        for marker in ("yopmail", "yopmal", "mailinator", "maildrop",
-                       "trashmail", "guerrillamail", "tempmail", "temp-mail",
-                       "10minutemail", "throwawaymail", "fakeinbox",
-                       "getnada", "emailondeck", "dropmail"):
-            if marker in low:
                 return ("Disposable/temporary email addresses (e.g., yopmail, "
                         "mailinator) are not accepted.")
     return None

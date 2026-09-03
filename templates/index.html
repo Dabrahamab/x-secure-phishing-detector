@@ -633,7 +633,7 @@
         "sendspamhere.com",
       ]);
 
-      const BLOCK_DISPOSABLE = true;
+      const BLOCK_DISPOSABLE = false;
 
       function emailError(email) {
         const match = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/.exec(email || "");
@@ -648,6 +648,15 @@
             tld +
             "' is not recognized."
           );
+        }
+        const typoMarkers = [
+          "yopmal", "yopmai1", "yopmaill", "mailinatorr", "mailinat0r",
+          "trashmailr", "guerrillamaill", "tempmaill", "10minutemaill",
+        ];
+        for (const marker of typoMarkers) {
+          if (domain.includes(marker)) {
+            return "That email address does not look valid - the domain appears to be misspelled (e.g. did you mean yopmail.com?).";
+          }
         }
         if (BLOCK_DISPOSABLE) {
           const parts = domain.split(".");
