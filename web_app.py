@@ -113,9 +113,8 @@ VALID_EMAIL_TLDS = {
     "wiki", "wine", "winners", "works", "wtf",
 }
 
-# NOTE: Disposable-domain blocking is currently DISABLED during testing so
-# addresses like yopmail.com can be used. To re-enable later, uncomment the
-# loop in _email_error below.
+# Disposable/temporary email addresses (e.g., yopmail, mailinator) are blocked
+# so takedown requests can be traced back to a genuine contact.
 DISPOSABLE_EMAIL_DOMAINS = {
     "yopmail.com", "yopmail.fr", "yopmail.net", "yopmail.co", "yopmail.org",
     "yopmail.co.in", "yopmail.io", "yopmail.info",
@@ -146,8 +145,7 @@ DISPOSABLE_EMAIL_DOMAINS = {
     "sendspamhere.com",
 }
 
-
-BLOCK_DISPOSABLE_EMAILS = False
+BLOCK_DISPOSABLE_EMAILS = True
 
 
 def _email_error(email: str) -> str | None:
@@ -163,6 +161,14 @@ def _email_error(email: str) -> str | None:
         parts = domain.split(".")
         for i in range(len(parts) - 1):
             if ".".join(parts[i:]) in DISPOSABLE_EMAIL_DOMAINS:
+                return ("Disposable/temporary email addresses (e.g., yopmail, "
+                        "mailinator) are not accepted.")
+        low = domain.lower()
+        for marker in ("yopmail", "yopmal", "mailinator", "maildrop",
+                       "trashmail", "guerrillamail", "tempmail", "temp-mail",
+                       "10minutemail", "throwawaymail", "fakeinbox",
+                       "getnada", "emailondeck", "dropmail"):
+            if marker in low:
                 return ("Disposable/temporary email addresses (e.g., yopmail, "
                         "mailinator) are not accepted.")
     return None
@@ -248,9 +254,9 @@ def _result_payload(site) -> dict:
     }
 
 
-def _send_requester_notification(requester_email: str, target_urls: list[dict], takedown_logs: list[dict] | None = None) -> bool:
+def _send_requester_notification(requester_email: str, target_urls: list[dict], takedown_logs: list[dict] | None = None, detailed_reports: list[str] | None = None) -> bool:
     message = EmailMessage()
-    message["Subject"] = "Phishing takedown request submitted"
+    message["Subject"] = "Abuse Report: Suspected phishing - takedown request submitted"
     message["From"] = SMTP_CONFIG["from_email"]
     message["To"] = requester_email
     if SMTP_CONFIG["from_email"].lower() != requester_email.lower():
@@ -260,16 +266,23 @@ def _send_requester_notification(requester_email: str, target_urls: list[dict], 
         "Your takedown request has been submitted to the host providers.",
         "They will review the reported URLs and follow up as appropriate.",
         "",
-        "Reported URLs:",
     ]
 
-    for item in target_urls:
-        if item.get("status") == "Safe":
-            body_lines.append(
-                f"- {item['url']} (Safe, {item['safe_percentage']}% clean)")
-        else:
-            body_lines.append(
-                f"- {item['url']} ({item['fraud_type']}, {item.get('status', 'Suspicious')} - risk {item['suspicious_percentage']}%)")
+    if detailed_reports:
+        for report in detailed_reports:
+            body_lines.append(report)
+            body_lines.append("")
+            body_lines.append("=" * 56)
+            body_lines.append("")
+    else:
+        body_lines.append("Reported URLs:")
+        for item in target_urls:
+            if item.get("status") == "Safe":
+                body_lines.append(
+                    f"- {item['url']} (Safe, {item['safe_percentage']}% clean)")
+            else:
+                body_lines.append(
+                    f"- {item['url']} ({item['fraud_type']}, {item.get('status', 'Suspicious')} - risk {item['suspicious_percentage']}%)")
 
     if takedown_logs:
         body_lines.append("")
@@ -403,6 +416,7 @@ def send_takedown():
 
     success_count = 0
     takedown_logs = []
+    detailed_reports = []
     reportable = ("Phishing", "Suspicious")
     for item in results:
         if item.get("status") not in reportable:
@@ -427,6 +441,7 @@ def send_takedown():
 
         outcome = system.send_takedown_request(site, SMTP_CONFIG)
         system.save_to_database(site, "in-memory takedown report")
+        detailed_reports.append(system._build_takedown_report(site))
 
         takedown_logs.append({
             "domain": site.domain,
@@ -444,7 +459,7 @@ def send_takedown():
         requester_urls = [
             item for item in results if item.get("status") in reportable]
         email_sent = _send_requester_notification(
-            requester_email, requester_urls, takedown_logs)
+            requester_email, requester_urls, takedown_logs, detailed_reports)
 
     if success_count == 0 and reportable_present:
         targeted = [log.get("providers_targeted") for log in takedown_logs]
