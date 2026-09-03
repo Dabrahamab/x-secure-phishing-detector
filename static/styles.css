@@ -186,7 +186,7 @@ button:disabled {
 
 .popup-content h3 {
   margin: 0 0 8px;
-  color: #34d399;
+  color: #ffffff;
 }
 
 .popup-content p {
@@ -210,7 +210,7 @@ button:disabled {
 .stat-card h3 {
   margin: 0 0 8px;
   font-size: 0.95rem;
-  color: #93c5fd;
+  color: #ffffff;
 }
 
 .stat-card span {
@@ -432,7 +432,7 @@ button:disabled {
   cursor: pointer;
   padding: 12px 14px;
   font-weight: 700;
-  color: #bfdbfe;
+  color: #ffffff;
   background: rgba(37, 99, 235, 0.08);
   border-bottom: 1px solid rgba(96, 165, 250, 0.18);
 }
