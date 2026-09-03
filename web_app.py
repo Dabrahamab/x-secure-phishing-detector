@@ -19,24 +19,31 @@ system = PhishingTakedownSystem()
 
 def _load_smtp_config() -> dict:
     config = {
-        "smtp_server": os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
+        "smtp_server": os.environ.get("SMTP_SERVER", ""),
         "smtp_port": int(os.environ.get("SMTP_PORT", "587")),
-        "username": os.environ.get("SMTP_USERNAME", "abdaniel2022@gmail.com"),
-        "password": os.environ.get("SMTP_PASSWORD", "diimbpxmqnxpbntm"),
-        "from_email": os.environ.get("FROM_EMAIL", "abdaniel2022@gmail.com"),
+        "username": os.environ.get("SMTP_USERNAME", ""),
+        "password": os.environ.get("SMTP_PASSWORD", ""),
+        "from_email": os.environ.get("FROM_EMAIL", ""),
     }
+    # Credentials are intentionally NOT hardcoded here. They come from the
+    # environment or from a local, git-ignored smtp_config.json file so secrets
+    # are never committed to the repository.
     local_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "smtp_config.json")
-    if os.path.exists(local_file) and not config.get("password"):
+    if os.path.exists(local_file):
         try:
             with open(local_file, "r", encoding="utf-8") as handle:
                 stored = json.load(handle)
             for key in ("smtp_server", "smtp_port", "username", "password", "from_email"):
-                if stored.get(key):
+                if not config.get(key) and stored.get(key):
                     config[key] = stored[key]
             if config.get("smtp_port"):
                 config["smtp_port"] = int(config["smtp_port"])
         except Exception:
             pass
+    if not config.get("smtp_server"):
+        config["smtp_server"] = "smtp.gmail.com"
+    if not config.get("from_email") and config.get("username"):
+        config["from_email"] = config["username"]
     return config
 
 
@@ -309,7 +316,7 @@ def analyze_urls():
     if not urls:
         return jsonify({"error": "Please enter at least one URL to analyze."}), 400
 
-    metrics = system.train_model()
+    metrics = system.load_model_metrics()
     results = []
     for url in urls:
         site = system.analyze_url(url)
@@ -330,7 +337,7 @@ def analyze_urls():
 
 @app.route("/api/model/evaluation", methods=["GET"])
 def model_evaluation():
-    return jsonify(system.train_model())
+    return jsonify(system.load_model_metrics())
 
 
 @app.route("/api/takedown", methods=["POST"])

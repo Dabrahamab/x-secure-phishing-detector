@@ -560,8 +560,10 @@ class PhishingTakedownSystem:
         except requests.exceptions.RequestException as exc:
             return {"ok": False, "status_code": 0, "json": None, "text": str(exc), "error": "request_error"}
 
-    def _weighted_confidence_score(self, *, found_keywords, typosquatting, punycode_flag, raw_ip_flag, domain_privacy, tld_risk, http_status, obfuscation_signals, subdomain_count, domain_age_days=None, clone_brand=None, financial_red_flags=None, dns_hardening_missing=False, cert_signal=False, random_subdomain=False, media_piracy=False):
+    def _weighted_confidence_score(self, *, found_keywords, typosquatting, punycode_flag, raw_ip_flag, domain_privacy, tld_risk, http_status, obfuscation_signals, subdomain_count, domain_age_days=None, clone_brand=None, financial_red_flags=None, dns_hardening_missing=False, cert_signal=False, random_subdomain=False, media_piracy=False, at_symbol=False, has_redirect=False):
         score = 0.0
+        score += 13.0 if at_symbol else 0.0
+        score += 10.0 if has_redirect and (raw_ip_flag or at_symbol or typosquatting or punycode_flag) else 0.0
         score += 18.0 if typosquatting else 0.0
         score += 12.0 if punycode_flag else 0.0
         score += 15.0 if raw_ip_flag else 0.0
@@ -1396,6 +1398,8 @@ class PhishingTakedownSystem:
             cert_signal=cert_signal,
             random_subdomain=random_subdomain,
             media_piracy=media_piracy,
+            at_symbol=has_at,
+            has_redirect=has_redirect_chars,
         )
         reputation_score = risk_summary["score"]
 
@@ -1614,6 +1618,42 @@ class PhishingTakedownSystem:
         }
         return self.model_metrics
 
+    def load_model_metrics(self, csv_path="phishing_dataset.csv"):
+        """Evaluate the already-loaded (persisted) model once, deterministically.
+
+        This does NOT retrain. It runs the pre-trained model against the real
+        dataset so reported metrics stay stable across requests, which keeps the
+        model evaluation credible and reproducible.
+        """
+        if self.model_metrics.get("accuracy"):
+            return self.model_metrics
+        try:
+            import pandas as pd
+            from sklearn.metrics import (
+                accuracy_score, precision_score, recall_score, f1_score,
+            )
+        except ImportError:
+            return self.model_metrics
+        csv_file = str(Path(__file__).resolve().parent / csv_path)
+        if not Path(csv_file).exists() or self.uci_model is None:
+            return self.model_metrics
+        try:
+            df = pd.read_csv(csv_file)
+            df.columns = [col.strip() for col in df.columns]
+            y = df["Result"].replace({-1: 1, 1: 0})
+            X = df[self.feature_names] if self.feature_names else df.drop(
+                columns=["Result"])
+            preds = self.uci_model.predict(X)
+            self.model_metrics = {
+                "precision": float(precision_score(y, preds, zero_division=0)),
+                "recall": float(recall_score(y, preds, zero_division=0)),
+                "f1_score": float(f1_score(y, preds, zero_division=0)),
+                "accuracy": float(accuracy_score(y, preds)),
+            }
+        except Exception:
+            pass
+        return self.model_metrics
+
     def analyze_url(self, url):
         domain = self._extract_domain(url)
         registrar = "Unknown"
@@ -1806,6 +1846,10 @@ class PhishingTakedownSystem:
             "blocklist_status", {}).get("risk_score", 0.0)) / 100.0
         score = self._predict_score(url, technical_intel=technical_intel)
         score = round(max(score, heuristic_risk), 3)
+        if not ip_addresses and whois_status in (
+            "no_record", "timeout", "error", "unavailable", "failed"
+        ):
+            score = max(score, 0.48)
         if score > 0.6:
             status = "Phishing"
         elif score > 0.35:
