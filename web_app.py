@@ -4,6 +4,7 @@ import json
 import os
 import re
 import smtplib
+import time
 from email.message import EmailMessage
 from types import SimpleNamespace
 
@@ -299,6 +300,45 @@ def _send_requester_notification(requester_email: str, target_urls: list[dict], 
         return False
 
 
+TAKEDOWN_LOG = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "takedown_log.json")
+
+
+def _append_takedown_log(requester_email: str, results: list[dict],
+                         takedown_logs: list[dict], success_count: int) -> None:
+    """Persist every submitted takedown request to a local JSON log so the
+    project owner can review them later. The log file is git-ignored."""
+    record = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "requester_email": requester_email,
+        "urls": [
+            {
+                "url": item.get("url"),
+                "domain": item.get("domain"),
+                "status": item.get("status"),
+                "fraud_type": item.get("fraud_type"),
+                "risk_score": item.get("suspicious_percentage"),
+            }
+            for item in results
+            if item.get("status") in ("Phishing", "Suspicious")
+        ],
+        "delivered": success_count,
+        "outcomes": takedown_logs,
+    }
+    try:
+        entries = []
+        if os.path.exists(TAKEDOWN_LOG):
+            with open(TAKEDOWN_LOG, "r", encoding="utf-8") as handle:
+                entries = json.load(handle)
+        if not isinstance(entries, list):
+            entries = []
+        entries.append(record)
+        with open(TAKEDOWN_LOG, "w", encoding="utf-8") as handle:
+            json.dump(entries, handle, indent=2)
+    except Exception:
+        pass
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -420,6 +460,8 @@ def send_takedown():
                    "URLs were classified as Phishing or Suspicious.")
     else:
         message = f"Sent {success_count} takedown request(s) to the hosting providers."
+
+    _append_takedown_log(requester_email, results, takedown_logs, success_count)
 
     return jsonify({
         "success_count": success_count,

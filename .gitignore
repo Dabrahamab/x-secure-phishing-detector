@@ -9,6 +9,7 @@ env/
 # Runtime records
 threat_database.json
 evidence_reports/
+takedown_log.json
 
 # Local secrets
 smtp_config.json
